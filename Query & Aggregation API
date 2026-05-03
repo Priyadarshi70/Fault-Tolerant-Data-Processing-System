@@ -1,0 +1,41 @@
+@app.get("/aggregates")
+def aggregates():
+ """
+ Query params:
+ client — filter by client_id
+ from_ts — ISO-8601 start timestamp (inclusive)
+ to_ts — ISO-8601 end timestamp (inclusive)
+ """
+ client = request.args.get("client")
+ from_ts = request.args.get("from_ts")
+ to_ts = request.args.get("to_ts")
+ sql = "SELECT client_id, metric, COUNT(*) as count, SUM(amount) as total FROM events WHERE 1=1"
+ params = []
+ if client:
+ sql += " AND client_id = ?"; params.append(client)
+ if from_ts:
+ sql += " AND timestamp >= ?"; params.append(from_ts)
+ if to_ts:
+ sql += " AND timestamp <= ?"; params.append(to_ts)
+ sql += " GROUP BY client_id, metric ORDER BY client_id, metric"
+ conn = get_db()
+ rows = conn.execute(sql, params).fetchall()
+ conn.close()
+ return jsonify([dict(r) for r in rows])
+@app.get("/events")
+def list_events():
+ """Return recently processed and rejected events for the UI."""
+ conn = get_db()
+ processed = conn.execute(
+ "SELECT id, client_id, metric, amount, timestamp, received_at "
+ "FROM events ORDER BY id DESC LIMIT 100"
+ ).fetchall()
+ rejected = conn.execute(
+ "SELECT id, raw, reason, received_at "
+ "FROM rejected_events ORDER BY id DESC LIMIT 50"
+ ).fetchall()
+ conn.close()
+ return jsonify({
+ "processed": [dict(r) for r in processed],
+ "rejected": [dict(r) for r in rejected],
+ })
